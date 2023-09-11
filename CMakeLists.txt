@@ -33,6 +33,13 @@ if(MSVC)
     # Use /W4 as /Wall includes unnesserey warnings such as added padding to structs
     set(CMAKE_CXX_FLAGS "/GS /permissive- /W4 ${CMAKE_CXX_FLAGS}")
 
+    # /EHs Enables stack unwind semantics for standard C++ exceptions to ensure stackframes are unwound
+    # and object deconstructors are called when an exception is caught.
+    # without it memory leaks and a warning is printed
+    # /EHc tells the compiler to assume that functions declared as extern "C" never throw a C++ exception
+    # This appears to not always be a defualt compiler option in CMAKE
+    set(CMAKE_CXX_FLAGS "/EHsc ${CMAKE_CXX_FLAGS}")
+
     # LINK accepts /SUBSYSTEM whics sets if we are a WINDOWS (gui) or a CONSOLE programs
     # This implicitly selects an entrypoint specific to the subsystem selected
     # qtmain/QtEntryPointLib provides the correct entrypoint (wWinMain) for gui programs
@@ -84,6 +91,39 @@ set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DTOML_ENABLE_FLOAT16=0")
 
 # set CXXFLAGS for build targets
 set(CMAKE_CXX_FLAGS_RELEASE "-O2 -D_FORTIFY_SOURCE=2 ${CMAKE_CXX_FLAGS_RELEASE}")
+
+option(DEBUG_ADDRESS_SANITIZER "Enable Address Sanitizer in Debug builds" OFF)
+
+# If this is a Debug build turn on address sanitiser
+if ((CMAKE_BUILD_TYPE STREQUAL "Debug" OR CMAKE_BUILD_TYPE STREQUAL "RelWithDebInfo") AND DEBUG_ADDRESS_SANITIZER)
+    message(STATUS "Address Sanitizer enabled for Debug builds, Turn it off with -DDEBUG_ADDRESS_SANITIZER=off")
+    if ("${CMAKE_CXX_COMPILER_ID}" MATCHES "Clang")
+        if (CMAKE_CXX_COMPILER_FRONTEND_VARIANT STREQUAL "MSVC")
+            # using clang with clang-cl front end 
+            message(STATUS "Address Sanitizer available on Clang MSVC frontend")
+            set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /fsanitize=address /Oy-")
+            set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} /fsanitize=address /Oy-")
+        else()
+            # AppleClang and Clang
+            message(STATUS "Address Sanitizer available on Clang")
+            set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fsanitize=address -fno-omit-frame-pointer")
+            set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fsanitize=address -fno-omit-frame-pointer")
+        endif()
+    elseif ("${CMAKE_CXX_COMPILER_ID}" STREQUAL "GNU")
+        # GCC
+        message(STATUS "Address Sanitizer available on GCC")
+        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fsanitize=address -fno-omit-frame-pointer")
+        set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fsanitize=address -fno-omit-frame-pointer")
+        link_libraries("asan")
+    elseif ("${CMAKE_CXX_COMPILER_ID}" STREQUAL "MSVC")
+        message(STATUS "Address Sanitizer available on MSVC")
+        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /fsanitize=address /Oy-")
+        set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} /fsanitize=address /Oy-")
+    else()
+        message(STATUS "Address Sanitizer not available on compiler ${CMAKE_CXX_COMPILER_ID}")
+    endif()
+endif()
+
 
 option(ENABLE_LTO "Enable Link Time Optimization" off)
 
@@ -138,15 +178,15 @@ set(Launcher_NEWS_OPEN_URL "https://prismlauncher.org/news" CACHE STRING "URL th
 set(Launcher_HELP_URL "https://prismlauncher.org/wiki/help-pages/%1" CACHE STRING "URL (with arg %1 to be substituted with page-id) that gets opened when the user requests help")
 
 ######## Set version numbers ########
-set(Launcher_VERSION_MAJOR 6)
-set(Launcher_VERSION_MINOR 3)
+set(Launcher_VERSION_MAJOR 8)
+set(Launcher_VERSION_MINOR 0)
 
 set(Launcher_VERSION_NAME "${Launcher_VERSION_MAJOR}.${Launcher_VERSION_MINOR}")
 set(Launcher_VERSION_NAME4 "${Launcher_VERSION_MAJOR}.${Launcher_VERSION_MINOR}.0.0")
 set(Launcher_VERSION_NAME4_COMMA "${Launcher_VERSION_MAJOR},${Launcher_VERSION_MINOR},0,0")
 
 # Build platform.
-set(Launcher_BUILD_PLATFORM "" CACHE STRING "A short string identifying the platform that this build was built for. Only used to display in the about dialog.")
+set(Launcher_BUILD_PLATFORM "unknown" CACHE STRING "A short string identifying the platform that this build was built for. Only used to display in the about dialog.")
 
 # Channel list URL
 set(Launcher_UPDATER_BASE "" CACHE STRING "Base URL for the updater.")
@@ -164,17 +204,29 @@ set(Launcher_BUG_TRACKER_URL "https://github.com/PrismLauncher/PrismLauncher/iss
 set(Launcher_TRANSLATIONS_URL "https://hosted.weblate.org/projects/prismlauncher/launcher/" CACHE STRING "URL for the translations platform.")
 
 # Matrix Space
-set(Launcher_MATRIX_URL "https://matrix.to/#/#prismlauncher:matrix.org" CACHE STRING "URL to the Matrix Space")
+set(Launcher_MATRIX_URL "https://prismlauncher.org/matrix" CACHE STRING "URL to the Matrix Space")
 
 # Discord URL
-set(Launcher_DISCORD_URL "https://discord.gg/prismlauncher" CACHE STRING "URL for the Discord guild.")
+set(Launcher_DISCORD_URL "https://prismlauncher.org/discord" CACHE STRING "URL for the Discord guild.")
 
 # Subreddit URL
-set(Launcher_SUBREDDIT_URL "https://www.reddit.com/r/PrismLauncher/" CACHE STRING "URL for the subreddit.")
+set(Launcher_SUBREDDIT_URL "https://prismlauncher.org/reddit" CACHE STRING "URL for the subreddit.")
 
 # Builds
 set(Launcher_FORCE_BUNDLED_LIBS OFF CACHE BOOL "Prevent using system libraries, if they are available as submodules")
-set(Launcher_QT_VERSION_MAJOR "5" CACHE STRING "Major Qt version to build against")
+set(Launcher_QT_VERSION_MAJOR "6" CACHE STRING "Major Qt version to build against")
+
+# Native libraries
+if(UNIX AND APPLE)
+    set(Launcher_GLFW_LIBRARY_NAME "libglfw.dylib" CACHE STRING "Name of native glfw library")
+    set(Launcher_OPENAL_LIBRARY_NAME "libopenal.dylib" CACHE STRING "Name of native openal library")
+elseif(UNIX)
+    set(Launcher_GLFW_LIBRARY_NAME "libglfw.so" CACHE STRING "Name of native glfw library")
+    set(Launcher_OPENAL_LIBRARY_NAME "libopenal.so" CACHE STRING "Name of native openal library")
+elseif(WIN32)
+    set(Launcher_GLFW_LIBRARY_NAME "glfw.dll" CACHE STRING "Name of native glfw library")
+    set(Launcher_OPENAL_LIBRARY_NAME "OpenAL.dll" CACHE STRING "Name of native openal library")
+endif()
 
 # API Keys
 # NOTE: These API keys are here for convenience. If you rebrand this software or intend to break the terms of service
@@ -272,6 +324,9 @@ if(NOT Launcher_FORCE_BUNDLED_LIBS)
 
     # Find ghc_filesystem
     find_package(ghc_filesystem QUIET)
+
+    # Find cmark
+    find_package(cmark QUIET)
 endif()
 
 include(ECMQtDeclareLoggingCategory)
@@ -282,6 +337,8 @@ set(Launcher_APP_BINARY_NAME "prismlauncher" CACHE STRING "Name of the Launcher 
 add_subdirectory(program_info)
 
 ####################################### Install layout #######################################
+
+set(Launcher_ENABLE_UPDATER NO)
 
 if(NOT (UNIX AND APPLE))
     # Install "portable.txt" if selected component is "portable"
@@ -307,9 +364,9 @@ if(UNIX AND APPLE)
     set(MACOSX_BUNDLE_SHORT_VERSION_STRING "${Launcher_VERSION_NAME}")
     set(MACOSX_BUNDLE_LONG_VERSION_STRING "${Launcher_VERSION_NAME}")
     set(MACOSX_BUNDLE_ICON_FILE ${Launcher_Name}.icns)
-    set(MACOSX_BUNDLE_COPYRIGHT "© 2022 ${Launcher_Copyright_Mac}")
-    set(MACOSX_SPARKLE_UPDATE_PUBLIC_KEY "v55ZWWD6QlPoXGV6VLzOTZxZUggWeE51X8cRQyQh6vA=")
-    set(MACOSX_SPARKLE_UPDATE_FEED_URL "https://prismlauncher.org/feed/appcast.xml")
+    set(MACOSX_BUNDLE_COPYRIGHT "© 2022-2023 ${Launcher_Copyright_Mac}")
+    set(MACOSX_SPARKLE_UPDATE_PUBLIC_KEY "v55ZWWD6QlPoXGV6VLzOTZxZUggWeE51X8cRQyQh6vA=" CACHE STRING "Public key for Sparkle update feed")
+    set(MACOSX_SPARKLE_UPDATE_FEED_URL "https://prismlauncher.org/feed/appcast.xml" CACHE STRING "URL for Sparkle update feed")
 
     set(MACOSX_SPARKLE_DOWNLOAD_URL "https://github.com/sparkle-project/Sparkle/releases/download/2.1.0/Sparkle-2.1.0.tar.xz" CACHE STRING "URL to Sparkle release archive")
     set(MACOSX_SPARKLE_SHA256 "bf6ac1caa9f8d321d5784859c88da874f28412f37fb327bc21b7b14c5d61ef94" CACHE STRING "SHA256 checksum for Sparkle release archive")
@@ -318,8 +375,12 @@ if(UNIX AND APPLE)
     # directories to look for dependencies
     set(DIRS ${QT_LIBS_DIR} ${QT_LIBEXECS_DIR} ${CMAKE_LIBRARY_OUTPUT_DIRECTORY} ${CMAKE_RUNTIME_OUTPUT_DIRECTORY} ${MACOSX_SPARKLE_DIR})
 
+    if(NOT MACOSX_SPARKLE_UPDATE_PUBLIC_KEY STREQUAL "" AND NOT MACOSX_SPARKLE_UPDATE_FEED_URL STREQUAL "")
+        set(Launcher_ENABLE_UPDATER YES)
+    endif()
+
     # install as bundle
-    set(INSTALL_BUNDLE "full")
+    set(INSTALL_BUNDLE "full" CACHE STRING "Use fixup_bundle to bundle dependencies")
 
     # Add the icon
     install(FILES ${Launcher_Branding_ICNS} DESTINATION ${RESOURCES_DEST_DIR} RENAME ${Launcher_Name}.icns)
@@ -329,10 +390,10 @@ elseif(UNIX)
 
     set(BINARY_DEST_DIR "bin")
     set(LIBRARY_DEST_DIR "lib${LIB_SUFFIX}")
-    set(JARS_DEST_DIR "share/${Launcher_APP_BINARY_NAME}")
+    set(JARS_DEST_DIR "share/${Launcher_Name}")
 
     # install as bundle with no dependencies included
-    set(INSTALL_BUNDLE "nodeps")
+    set(INSTALL_BUNDLE "nodeps" CACHE STRING "Use fixup_bundle to bundle dependencies")
 
     # Set RPATH
     SET(Launcher_BINARY_RPATH "$ORIGIN/")
@@ -342,6 +403,8 @@ elseif(UNIX)
     install(FILES ${CMAKE_CURRENT_SOURCE_DIR}/${Launcher_SVG} DESTINATION "${KDE_INSTALL_ICONDIR}/hicolor/scalable/apps")
     install(FILES ${CMAKE_CURRENT_SOURCE_DIR}/${Launcher_mrpack_MIMEInfo} DESTINATION ${KDE_INSTALL_MIMEDIR})
 
+    install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/launcher/qtlogging.ini" DESTINATION "share/${Launcher_Name}")
+    
     if(Launcher_ManPage)
         install(FILES ${CMAKE_CURRENT_BINARY_DIR}/${Launcher_ManPage} DESTINATION "${KDE_INSTALL_MANDIR}/man6")
     endif()
@@ -364,10 +427,12 @@ elseif(WIN32)
     set(DIRS ${QT_LIBS_DIR} ${QT_LIBEXECS_DIR} ${CMAKE_LIBRARY_OUTPUT_DIRECTORY} ${CMAKE_RUNTIME_OUTPUT_DIRECTORY})
 
     # install as bundle
-    set(INSTALL_BUNDLE "full")
+    set(INSTALL_BUNDLE "full" CACHE STRING "Use fixup_bundle to bundle dependencies")
 else()
     message(FATAL_ERROR "Platform not supported")
 endif()
+
+
 
 ################################ Included Libs ################################
 
@@ -380,7 +445,6 @@ option(NBT_BUILD_TESTS "Build NBT library tests" OFF) #FIXME: fix unit tests.
 add_subdirectory(libraries/libnbtplusplus)
 
 add_subdirectory(libraries/systeminfo) # system information library
-add_subdirectory(libraries/hoedown) # markdown parser
 add_subdirectory(libraries/launcher) # java based launcher part for Minecraft
 add_subdirectory(libraries/javacheck) # java compatibility checker
 if(FORCE_BUNDLED_ZLIB)
@@ -425,17 +489,26 @@ if(NOT tomlplusplus_FOUND)
 else()
     message(STATUS "Using system tomlplusplus")
 endif()
+if(NOT cmark_FOUND)
+    message(STATUS "Using bundled cmark")
+    set(CMARK_STATIC ON CACHE BOOL "Build static libcmark library" FORCE)
+    set(CMARK_SHARED OFF CACHE BOOL "Build shared libcmark library" FORCE)
+    set(CMARK_TESTS OFF CACHE BOOL "Build cmark tests and enable testing" FORCE)
+    add_subdirectory(libraries/cmark EXCLUDE_FROM_ALL) # Markdown parser
+    add_library(cmark::cmark ALIAS cmark_static)
+else()
+    message(STATUS "Using system cmark")
+endif()
 add_subdirectory(libraries/katabasis) # An OAuth2 library that tried to do too much
 add_subdirectory(libraries/gamemode)
 add_subdirectory(libraries/murmur2) # Hash for usage with the CurseForge API
 if (NOT ghc_filesystem_FOUND)
     message(STATUS "Using bundled ghc_filesystem")
-    set(GHC_FILESYSTEM_WITH_INSTALL OFF) # Workaround ghc::filesystem bug
     add_subdirectory(libraries/filesystem) # Implementation of std::filesystem for old C++, for usage in old macOS
-    add_library(ghcFilesystem::ghc_filesystem ALIAS ghc_filesystem)
 else()
     message(STATUS "Using system ghc_filesystem")
 endif()
+add_subdirectory(libraries/qdcss) # css parser
 
 ############################### Built Artifacts ###############################
 

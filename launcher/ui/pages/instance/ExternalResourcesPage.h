@@ -4,8 +4,8 @@
 #include <QSortFilterProxyModel>
 
 #include "Application.h"
-#include "settings/Setting.h"
 #include "minecraft/MinecraftInstance.h"
+#include "settings/Setting.h"
 #include "ui/pages/BasePage.h"
 
 class ResourceFolderModel;
@@ -29,6 +29,7 @@ class ExternalResourcesPage : public QMainWindow, public BasePage {
     virtual QString helpPage() const override = 0;
 
     virtual bool shouldDisplay() const override = 0;
+    QString extraHeaderInfoString();
 
     void openedImpl() override;
     void closedImpl() override;
@@ -50,7 +51,8 @@ class ExternalResourcesPage : public QMainWindow, public BasePage {
     void filterTextChanged(const QString& newContents);
 
     virtual void addItem();
-    virtual void removeItem();
+    void removeItem();
+    virtual void removeItems(const QItemSelection& selection);
 
     virtual void enableItem();
     virtual void disableItem();
@@ -59,6 +61,7 @@ class ExternalResourcesPage : public QMainWindow, public BasePage {
     virtual void viewConfigs();
 
     void ShowContextMenu(const QPoint& pos);
+    void ShowHeaderContextMenu(const QPoint& pos);
 
    protected:
     BaseInstance* m_instance = nullptr;
@@ -69,8 +72,6 @@ class ExternalResourcesPage : public QMainWindow, public BasePage {
 
     QString m_fileSelectionFilter;
     QString m_viewFilter;
-
-    bool m_controlsEnabled = true;
 
     std::shared_ptr<Setting> m_wide_bar_setting = nullptr;
 };
